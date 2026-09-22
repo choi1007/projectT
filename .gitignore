@@ -1,0 +1,51 @@
+# ===== Unity 기본 =====
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Asset meta는 유지하되, IDE 자동생성 프로젝트 파일은 제외
+.vs/
+.vscode/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# 빌드 산출물
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# 크래시 리포트
+sysinfo.txt
+crashlytics-build.properties
+
+# ===== 프로젝트 자체 산출물 =====
+# Addressables 로컬 빌드 산출물 (에셋번들/카탈로그) - 소스가 아니라 빌드 결과물이라 git에 안 올림
+/ServerData/
+/Assets/AddressableAssetsData/*/*BuildLayout.txt
+/Assets/AddressableAssetsData/*/addressables_content_state.bin
+
+# ===== Git LFS 권장 대상 (별도 설정 필요, 아래 안내 참고) =====
+# *.psd
+# *.png
+# *.jpg
+# *.fbx
+# *.wav
+# *.mp3
+# *.mp4

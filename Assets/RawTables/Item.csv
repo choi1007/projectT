@@ -1,0 +1,6 @@
+Id,Name,Price,Weight,Stackable
+int,string,int,float,bool
+2001,HealthPotion,50,0.2,TRUE
+2002,ManaPotion,60,0.2,TRUE
+2003,IronSword,300,3.5,FALSE
+3001,Elixir,1234,0.1,TRUE

@@ -1,0 +1,6 @@
+Id,Name,Hp,MoveSpeed,IsBoss
+int,string,int,float,bool
+1001,Slime,50,1.2,false
+1002,Goblin,80,1.8,false
+1003,Orc,150,1.0,false
+2001,DragonLord,5000,0.8,true
