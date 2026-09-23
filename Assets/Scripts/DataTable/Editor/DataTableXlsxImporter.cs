@@ -13,10 +13,13 @@ namespace ProjectT.DataTable.Editor
 {
     /// <summary>
     /// 실제 .xlsx 파일(엑셀로 만든 원본)을 읽어서 CSV로 변환하고,
-    /// 그 CSV를 DataTableCsvImporter로 넘겨 ScriptableObject/Addressable까지 한 번에 적용하는 툴.
+    /// 그 CSV를 DataTableCsvImporter로 넘겨 검증 후 ScriptableObject/Addressable까지 한 번에 적용하는 툴.
     ///
     /// 규칙은 CSV 임포터와 동일: 첫 번째 시트 기준으로
     ///   1행: 컬럼 이름 / 2행: 타입(int, float, bool, string) / 3행부터: 데이터
+    ///
+    /// 변환된 CSV의 줄 번호는 엑셀 행 번호와 같습니다 (중간에 빈 행이 있어도 유지).
+    /// 그래서 검증 에러의 "5행 C열"을 엑셀에서 그대로 찾아가면 됩니다.
     ///
     /// 사용법:
     ///   Tools > Data Table > Import XLSX...              (파일 하나 선택해서 변환+적용)
@@ -41,6 +44,11 @@ namespace ProjectT.DataTable.Editor
                 Selection.activeObject = asset;
                 EditorGUIUtility.PingObject(asset);
             }
+            else
+            {
+                EditorUtility.DisplayDialog("Data Table Import (XLSX)",
+                    "데이터에 오류가 있어 임포트하지 않았습니다. 기존 테이블은 그대로입니다.\n콘솔에서 오류 위치(엑셀 행/열)를 확인하세요.", "OK");
+            }
         }
 
         [MenuItem("Tools/Data Table/Import All In ExcelTables")]
@@ -57,18 +65,24 @@ namespace ProjectT.DataTable.Editor
                 .Where(f => !Path.GetFileName(f).StartsWith("~$"))
                 .ToArray();
 
-            var results = new List<DataTableAsset>();
+            var succeeded = new List<string>();
+            var failed = new List<string>();
             foreach (var file in files)
             {
                 var asset = ConvertAndImport(file);
-                if (asset != null) results.Add(asset);
+                if (asset != null) succeeded.Add(asset.tableName);
+                else failed.Add(Path.GetFileName(file));
             }
 
             AssetDatabase.SaveAssets();
-            Debug.Log($"[DataTableXlsxImporter] {results.Count}개 테이블 임포트 완료: {string.Join(", ", results.Select(r => r.tableName))}");
+            if (failed.Count > 0)
+            {
+                Debug.LogError($"[DataTableXlsxImporter] {failed.Count}개 테이블 임포트 실패 (기존 데이터 유지): {string.Join(", ", failed)}");
+            }
+            Debug.Log($"[DataTableXlsxImporter] {succeeded.Count}개 테이블 임포트 완료: {string.Join(", ", succeeded)}");
         }
 
-        /// <summary>xlsx -> Assets/RawTables/&lt;이름&gt;.csv 로 변환 후, 기존 CSV 임포터를 그대로 호출합니다.</summary>
+        /// <summary>xlsx -> Assets/RawTables/&lt;이름&gt;.csv 로 변환 후, CSV 임포터(검증 포함)를 호출합니다.</summary>
         public static DataTableAsset ConvertAndImport(string xlsxPath)
         {
             if (!File.Exists(xlsxPath))
@@ -84,6 +98,11 @@ namespace ProjectT.DataTable.Editor
             {
                 rows = ReadXlsxRows(xlsxPath);
             }
+            catch (IOException e)
+            {
+                Debug.LogError($"[DataTableXlsxImporter] '{Path.GetFileName(xlsxPath)}'을(를) 열 수 없습니다. 엑셀에서 파일을 열어두셨다면 닫고 다시 시도하세요. ({e.Message})");
+                return null;
+            }
             catch (Exception e)
             {
                 Debug.LogError($"[DataTableXlsxImporter] xlsx 파싱 실패 ({xlsxPath}): {e.Message}");
@@ -96,19 +115,36 @@ namespace ProjectT.DataTable.Editor
                 return null;
             }
 
+            var csvText = RowsToCsv(rows);
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            if (!DataTableCsvImporter.TryBuildTable(csvText, errors, warnings, out _, out _))
+            {
+                Debug.LogError($"[DataTableXlsxImporter] '{tableName}' 검증 실패. 기존 CSV와 테이블을 유지합니다.\n{string.Join("\n", errors)}");
+                return null;
+            }
+
             var rawTablesAbsolute = Path.Combine(Directory.GetCurrentDirectory(), RawTablesFolder);
             Directory.CreateDirectory(rawTablesAbsolute);
             var csvAbsolutePath = Path.Combine(rawTablesAbsolute, tableName + ".csv");
 
-            File.WriteAllText(csvAbsolutePath, RowsToCsv(rows), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.WriteAllText(csvAbsolutePath, csvText, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             var csvProjectPath = $"{RawTablesFolder}/{tableName}.csv";
             AssetDatabase.ImportAsset(csvProjectPath);
 
-            Debug.Log($"[DataTableXlsxImporter] '{tableName}.xlsx' -> '{csvProjectPath}' 변환 완료, 임포트 적용 중...");
+            Debug.Log($"[DataTableXlsxImporter] '{tableName}.xlsx' -> '{csvProjectPath}' 변환 완료, 검증 및 임포트 중...");
             return DataTableCsvImporter.ImportCsvFile(csvAbsolutePath);
         }
 
+        // ---------------------------------------------------------------
+        // xlsx 파싱 (zip 안의 xl/worksheets/sheet1.xml + xl/sharedStrings.xml)
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// 첫 번째 시트를 읽어 행 목록으로 돌려줍니다. 결과의 인덱스 i는 엑셀 (i+1)행에 해당하며,
+        /// 중간의 빈 행도 빈 배열로 유지해 줄 번호가 어긋나지 않게 합니다. 끝쪽 빈 행만 잘라냅니다.
+        /// </summary>
         private static List<string[]> ReadXlsxRows(string xlsxPath)
         {
             using var fs = File.OpenRead(xlsxPath);
@@ -130,12 +166,24 @@ namespace ProjectT.DataTable.Editor
             }
 
             var rowNodes = doc.GetElementsByTagName("row");
-            var rows = new List<string[]>();
+            var rowsByNumber = new Dictionary<int, Dictionary<int, string>>();
             int maxCol = 0;
-            var parsedRows = new List<(int rowIndex, Dictionary<int, string> cells)>();
+            int maxRow = 0;
+            int nextRowNumber = 1;
 
             foreach (XmlNode rowNode in rowNodes)
             {
+                // <row r="5"> 의 r이 실제 엑셀 행 번호. 없으면 이전 행 다음 번호로 간주.
+                int rowNumber = nextRowNumber;
+                var rAttr = rowNode.Attributes?["r"]?.Value;
+                if (!string.IsNullOrEmpty(rAttr) &&
+                    int.TryParse(rAttr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRow) &&
+                    parsedRow > 0)
+                {
+                    rowNumber = parsedRow;
+                }
+                nextRowNumber = rowNumber + 1;
+
                 var cellDict = new Dictionary<int, string>();
                 foreach (XmlNode cellNode in rowNode.ChildNodes)
                 {
@@ -147,21 +195,28 @@ namespace ProjectT.DataTable.Editor
                     cellDict[colIndex] = value;
                     if (colIndex + 1 > maxCol) maxCol = colIndex + 1;
                 }
-                parsedRows.Add((0, cellDict));
+
+                rowsByNumber[rowNumber] = cellDict;
+                if (rowNumber > maxRow) maxRow = rowNumber;
             }
 
-            foreach (var (_, cellDict) in parsedRows)
+            var rows = new List<string[]>(maxRow);
+            for (int rowNumber = 1; rowNumber <= maxRow; rowNumber++)
             {
                 var arr = new string[maxCol];
+                rowsByNumber.TryGetValue(rowNumber, out var cellDict);
                 for (int i = 0; i < maxCol; i++)
                 {
-                    arr[i] = cellDict.TryGetValue(i, out var v) ? v : string.Empty;
+                    arr[i] = cellDict != null && cellDict.TryGetValue(i, out var v) ? v : string.Empty;
                 }
                 rows.Add(arr);
             }
 
-            // 완전히 빈 줄 제거 (시트 끝쪽 빈 행 등)
-            rows.RemoveAll(r => r.All(string.IsNullOrWhiteSpace));
+            // 끝쪽 빈 행만 제거 (중간 빈 행은 줄 번호 유지를 위해 남겨둠 — CSV 임포터가 건너뜀)
+            while (rows.Count > 0 && rows[rows.Count - 1].All(string.IsNullOrWhiteSpace))
+            {
+                rows.RemoveAt(rows.Count - 1);
+            }
 
             return rows;
         }
@@ -181,6 +236,7 @@ namespace ProjectT.DataTable.Editor
             var siNodes = doc.GetElementsByTagName("si");
             foreach (XmlNode si in siNodes)
             {
+                // <si><t>text</t></si> 또는 서식이 섞인 <si><r><t>a</t></r><r><t>b</t></r></si>
                 var sb = new StringBuilder();
                 CollectText(si, sb);
                 list.Add(sb.ToString());
@@ -231,7 +287,7 @@ namespace ProjectT.DataTable.Editor
                     return raw == "1" ? "TRUE" : "FALSE";
                 case "str": // 수식 결과 문자열
                 default:
-                    return raw; // 숫자거나(number), 타입 지정이 없는 경우 raw 값 그대로 (2번째 헤더 행에서 int/float/bool/string으로 해석됨)
+                    return raw; // 숫자거나(number), 타입 지정이 없는 경우 raw 값 그대로 (2번째 헤더 행 타입으로 검증됨)
             }
         }
 
@@ -245,6 +301,10 @@ namespace ProjectT.DataTable.Editor
             }
             return Mathf.Max(0, col - 1);
         }
+
+        // ---------------------------------------------------------------
+        // CSV 쓰기 (RFC4180 스타일 최소 이스케이핑)
+        // ---------------------------------------------------------------
 
         private static string RowsToCsv(List<string[]> rows)
         {

@@ -130,5 +130,9 @@ namespace ProjectT.DataTable
         public IReadOnlyList<DataRow> Rows => rows;
 
         public int RowCount => rows.Count;
+
+        /// <summary>소비 코드의 필수 컬럼이 존재하고 선언 타입이 일치하는지 검사합니다.</summary>
+        public bool HasColumn(string name, ColumnType type) =>
+            columns.Exists(column => column.name == name && column.type == type);
     }
 }

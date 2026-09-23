@@ -21,12 +21,6 @@ MonoBehaviour:
     m_SerializedLabels:
     - DataTable
     FlaggedDuringContentUpdateRestriction: 0
-  - m_GUID: acd910074c0773d46a50720073f1a1b1
-    m_Address: Monster
-    m_ReadOnly: 0
-    m_SerializedLabels:
-    - DataTable
-    FlaggedDuringContentUpdateRestriction: 0
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: 2554d8fa4a239d84da48ed1eadae5311, type: 2}
   m_SchemaSet:

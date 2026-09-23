@@ -39,7 +39,9 @@ crashlytics-build.properties
 # Addressables 로컬 빌드 산출물 (에셋번들/카탈로그) - 소스가 아니라 빌드 결과물이라 git에 안 올림
 /ServerData/
 /Assets/AddressableAssetsData/*/*BuildLayout.txt
-/Assets/AddressableAssetsData/*/addressables_content_state.bin
+# 주의: Assets/AddressableAssetsData/<플랫폼>/addressables_content_state.bin 은 git에 올려야 합니다.
+#       "Update a Previous Build"(패치 빌드)가 이 파일을 기준으로 변경분을 계산합니다.
+#       출시 빌드를 만들 때마다 이 파일이 갱신되니, 출시 커밋에 태그를 달아두세요.
 
 # ===== Git LFS 권장 대상 (별도 설정 필요, 아래 안내 참고) =====
 # *.psd
@@ -49,3 +51,7 @@ crashlytics-build.properties
 # *.wav
 # *.mp3
 # *.mp4
+
+# 엑셀이 파일을 열고 있는 동안 생기는 임시 잠금 파일
+~$*
+~$*.meta
