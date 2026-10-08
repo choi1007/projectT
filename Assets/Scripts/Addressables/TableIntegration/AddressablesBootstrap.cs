@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
-using UnityEngine.ResourceManagement.AsyncOperations;
+using Portable.AddressableContent;
+
 
 namespace ProjectT.DataTable
 {
@@ -14,7 +14,7 @@ namespace ProjectT.DataTable
     ///  3) 있으면 카탈로그를 갱신 (바뀐 테이블 번들만 새로 받음)
     ///  4) TableManager 초기화 (모든 DataTable 로드)
     ///
-    /// 테이블을 쓰는 쪽은 TableManager.InitializeAsync()를 직접 부르지 말고 <see cref="Ready"/>를 기다리세요.
+    /// 테이블을 쓰는 쪽은 TableManager.Initialize(...)를 직접 부르지 말고 <see cref="Ready"/>를 기다리세요.
     /// 패치 확인보다 먼저 테이블을 읽으면 패치 전 데이터를 들고 있게 됩니다.
     ///   await AddressablesBootstrap.Ready;
     ///   var row = TableManager.GetRow("Item", 2001);
@@ -25,6 +25,7 @@ namespace ProjectT.DataTable
     {
         /// <summary>테이블 요약 로그에 보여줄 최대 행 수 (행이 많은 테이블이 콘솔을 뒤덮지 않도록)</summary>
         private const int MaxRowsInSummary = 5;
+        private static AssetLease<DataTableAsset> _tables;
 
         private static TaskCompletionSource<bool> _ready = new TaskCompletionSource<bool>();
 
@@ -36,6 +37,8 @@ namespace ProjectT.DataTable
         private static void ResetStatics()
         {
             TableManager.Reset();
+            _tables?.Dispose();
+            _tables = null;
             _ready = new TaskCompletionSource<bool>();
         }
 
@@ -63,44 +66,16 @@ namespace ProjectT.DataTable
         {
             Debug.Log("[AddressablesBootstrap] 초기화 시작...");
 
-            var initHandle = Addressables.InitializeAsync(false);
-            await AwaitAndRelease(initHandle, "Addressables 초기화");
-            Debug.Log("[AddressablesBootstrap] Addressables 초기화 완료");
-
-            var checkHandle = Addressables.CheckForCatalogUpdates(false);
-            List<string> catalogsToUpdate = await AwaitAndRelease(checkHandle, "카탈로그 확인");
-
-            if (catalogsToUpdate != null && catalogsToUpdate.Count > 0)
-            {
-                Debug.Log($"[AddressablesBootstrap] 패치 발견: {string.Join(", ", catalogsToUpdate)} -> 카탈로그 업데이트 중...");
-                var updateHandle = Addressables.UpdateCatalogs(catalogsToUpdate, false);
-                var locators = await AwaitAndRelease(updateHandle, "카탈로그 업데이트");
-                Debug.Log($"[AddressablesBootstrap] 카탈로그 업데이트 완료 ({locators?.Count ?? 0}개 로케이터)");
-            }
-            else
-            {
-                Debug.Log("[AddressablesBootstrap] 새 패치 없음 (최신 상태)");
-            }
-
-            await TableManager.InitializeAsync();
-            LogLoadedTables();
-        }
-
-        private static async Task<T> AwaitAndRelease<T>(AsyncOperationHandle<T> handle, string operation)
-        {
+            await ContentLoader.InitializeAsync();
+            var lease = await ContentLoader.LoadLabelAsync<DataTableAsset>(TableManager.DefaultLabel);
             try
             {
-                var result = await handle.Task;
-                if (handle.Status != AsyncOperationStatus.Succeeded)
-                    throw new System.InvalidOperationException($"{operation} 실패", handle.OperationException);
-                return result;
+                TableManager.Initialize(lease.Assets);
+                _tables = lease;
             }
-            finally
-            {
-                if (handle.IsValid()) Addressables.Release(handle);
-            }
+            catch { lease.Dispose(); throw; }
+            LogLoadedTables();
         }
-
         /// <summary>
         /// 실제로 로드된 테이블을 전부 순회하며 요약을 남깁니다. 테이블 이름을 코드에 적을 필요가 없어서
         /// 테이블이 추가/삭제되어도 이 코드는 고칠 필요가 없습니다.

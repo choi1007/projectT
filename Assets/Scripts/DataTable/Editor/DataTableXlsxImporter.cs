@@ -276,14 +276,14 @@ namespace ProjectT.DataTable.Editor
 
             switch (typeAttr)
             {
-                case "s": // shared string
+                case "s": // 공유 문자열
                     if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idx) &&
                         idx >= 0 && idx < sharedStrings.Count)
                     {
                         return sharedStrings[idx];
                     }
                     return string.Empty;
-                case "b": // boolean
+                case "b": // 참/거짓 값
                     return raw == "1" ? "TRUE" : "FALSE";
                 case "str": // 수식 결과 문자열
                 default:
