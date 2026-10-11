@@ -17,36 +17,62 @@ MonoBehaviour:
   columns:
   - name: Id
     type: 0
+    enumTypeName: 
   - name: Name
     type: 3
+    enumTypeName: 
   - name: Price
     type: 0
+    enumTypeName: 
   - name: Weight
     type: 1
+    enumTypeName: 
   - name: Stackable
     type: 2
+    enumTypeName: 
+  - name: Type
+    type: 4
+    enumTypeName: ProjectT.DataTable.Enums.ItemType
+  - name: Rarity
+    type: 4
+    enumTypeName: ProjectT.DataTable.Enums.ItemRarity
+  - name: Element
+    type: 4
+    enumTypeName: ProjectT.DataTable.Enums.ItemElement
   rows:
   - cells:
     - 2001
     - HealthPotion
-    - 50
+    - 500
     - 0.2
     - TRUE
+    - Potion
+    - Common
+    - None
   - cells:
     - 2002
     - ManaPotion
-    - 60
+    - 600
     - 0.2
     - TRUE
+    - Potion
+    - Common
+    - Water
   - cells:
     - 2003
     - IronSword
     - 300
     - 3.5
     - FALSE
+    - Weapon
+    - Rare
+    - Fire
   - cells:
     - 3001
     - Elixir
     - 1234
     - 0.1
     - TRUE
+    - Potion
+    - Epic
+    - None

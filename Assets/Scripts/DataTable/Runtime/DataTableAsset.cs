@@ -6,13 +6,15 @@ using UnityEngine;
 namespace ProjectT.DataTable
 {
     /// <summary>
-    /// 컬럼 하나의 이름과 타입(int/float/bool/string)을 저장합니다.
+    /// 컬럼 하나의 이름과 타입(int/float/bool/string/enum)을 저장합니다.
     /// </summary>
     [Serializable]
     public class ColumnDef
     {
         public string name;
         public ColumnType type;
+        // enum 컬럼은 네임스페이스를 포함한 타입 이름을 저장합니다.
+        public string enumTypeName;
     }
 
     public enum ColumnType
@@ -20,7 +22,8 @@ namespace ProjectT.DataTable
         Int,
         Float,
         Bool,
-        String
+        String,
+        Enum
     }
 
     /// <summary>
@@ -34,13 +37,16 @@ namespace ProjectT.DataTable
         public List<string> cells = new List<string>();
 
         [NonSerialized] private Dictionary<string, string> _byName;
+        [NonSerialized] private Dictionary<string, ColumnDef> _definitions;
 
         public void BuildIndex(List<ColumnDef> columns)
         {
             _byName = new Dictionary<string, string>(columns.Count);
+            _definitions = new Dictionary<string, ColumnDef>(columns.Count);
             for (int i = 0; i < columns.Count && i < cells.Count; i++)
             {
                 _byName[columns[i].name] = cells[i];
+                _definitions[columns[i].name] = columns[i];
             }
         }
 
@@ -81,6 +87,18 @@ namespace ProjectT.DataTable
         }
 
         public bool HasColumn(string column) => _byName != null && _byName.ContainsKey(column);
+
+        /// <summary>선언된 enum 타입과 항목 이름이 정확히 일치할 때만 값을 반환합니다.</summary>
+        public T GetEnum<T>(string column) where T : struct, Enum
+        {
+            if (_definitions == null || !_definitions.TryGetValue(column, out var definition) ||
+                definition.type != ColumnType.Enum || definition.enumTypeName != typeof(T).FullName)
+                throw new InvalidOperationException($"'{column}' 컬럼은 enum:{typeof(T).FullName} 타입이 아닙니다.");
+            string value = GetString(column).Trim();
+            if (!Enum.IsDefined(typeof(T), value))
+                throw new InvalidOperationException($"'{column}'의 값 '{value}'은(는) {typeof(T).FullName}의 항목이 아닙니다.");
+            return (T)Enum.Parse(typeof(T), value, false);
+        }
     }
 
     /// <summary>

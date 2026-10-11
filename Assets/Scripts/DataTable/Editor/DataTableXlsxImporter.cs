@@ -16,7 +16,7 @@ namespace ProjectT.DataTable.Editor
     /// 그 CSV를 DataTableCsvImporter로 넘겨 검증 후 ScriptableObject/Addressable까지 한 번에 적용하는 툴.
     ///
     /// 규칙은 CSV 임포터와 동일: 첫 번째 시트 기준으로
-    ///   1행: 컬럼 이름 / 2행: 타입(int, float, bool, string) / 3행부터: 데이터
+    ///   1행: 컬럼 이름 / 2행: 타입(int, float, bool, string, enum:타입이름) / 3행부터: 데이터
     ///
     /// 변환된 CSV의 줄 번호는 엑셀 행 번호와 같습니다 (중간에 빈 행이 있어도 유지).
     /// 그래서 검증 에러의 "5행 C열"을 엑셀에서 그대로 찾아가면 됩니다.
@@ -44,7 +44,7 @@ namespace ProjectT.DataTable.Editor
                 Selection.activeObject = asset;
                 EditorGUIUtility.PingObject(asset);
             }
-            else
+            else if (!DataTableEnumGenerator.IsPending)
             {
                 EditorUtility.DisplayDialog("Data Table Import (XLSX)",
                     "데이터에 오류가 있어 임포트하지 않았습니다. 기존 테이블은 그대로입니다.\n콘솔에서 오류 위치(엑셀 행/열)를 확인하세요.", "OK");
@@ -71,7 +71,7 @@ namespace ProjectT.DataTable.Editor
             {
                 var asset = ConvertAndImport(file);
                 if (asset != null) succeeded.Add(asset.tableName);
-                else failed.Add(Path.GetFileName(file));
+                else if (!DataTableEnumGenerator.IsPending) failed.Add(Path.GetFileName(file));
             }
 
             AssetDatabase.SaveAssets();
@@ -116,6 +116,7 @@ namespace ProjectT.DataTable.Editor
             }
 
             var csvText = RowsToCsv(rows);
+            if (!DataTableEnumGenerator.Prepare(csvText, xlsxPath)) return null;
             var errors = new List<string>();
             var warnings = new List<string>();
             if (!DataTableCsvImporter.TryBuildTable(csvText, errors, warnings, out _, out _))
@@ -165,7 +166,7 @@ namespace ProjectT.DataTable.Editor
                 doc.Load(sheetStream);
             }
 
-            var rowNodes = doc.GetElementsByTagName("row");
+            var rowNodes = doc.GetElementsByTagName("row", doc.DocumentElement.NamespaceURI);
             var rowsByNumber = new Dictionary<int, Dictionary<int, string>>();
             int maxCol = 0;
             int maxRow = 0;
@@ -187,7 +188,7 @@ namespace ProjectT.DataTable.Editor
                 var cellDict = new Dictionary<int, string>();
                 foreach (XmlNode cellNode in rowNode.ChildNodes)
                 {
-                    if (cellNode.Name != "c") continue;
+                    if (cellNode.LocalName != "c") continue;
                     var refAttr = cellNode.Attributes?["r"]?.Value ?? "";
                     var colIndex = ColumnLettersToIndex(refAttr);
                     var typeAttr = cellNode.Attributes?["t"]?.Value;
@@ -233,7 +234,7 @@ namespace ProjectT.DataTable.Editor
                 doc.Load(stream);
             }
 
-            var siNodes = doc.GetElementsByTagName("si");
+            var siNodes = doc.GetElementsByTagName("si", doc.DocumentElement.NamespaceURI);
             foreach (XmlNode si in siNodes)
             {
                 // <si><t>text</t></si> 또는 서식이 섞인 <si><r><t>a</t></r><r><t>b</t></r></si>
@@ -248,7 +249,7 @@ namespace ProjectT.DataTable.Editor
         {
             foreach (XmlNode child in node.ChildNodes)
             {
-                if (child.Name == "t")
+                if (child.LocalName == "t")
                 {
                     sb.Append(child.InnerText);
                 }
@@ -263,14 +264,14 @@ namespace ProjectT.DataTable.Editor
         {
             if (typeAttr == "inlineStr")
             {
-                var isNode = cellNode["is"];
+                var isNode = cellNode["is", cellNode.NamespaceURI];
                 if (isNode == null) return string.Empty;
                 var sb = new StringBuilder();
                 CollectText(isNode, sb);
                 return sb.ToString();
             }
 
-            var vNode = cellNode["v"];
+            var vNode = cellNode["v", cellNode.NamespaceURI];
             if (vNode == null) return string.Empty;
             var raw = vNode.InnerText;
 

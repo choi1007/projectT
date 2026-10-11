@@ -1,4 +1,5 @@
 using ProjectT.DataTable;
+using ProjectT.DataTable.Enums;
 using UnityEngine;
 
 namespace ProjectT.Game
@@ -22,12 +23,18 @@ namespace ProjectT.Game
         [SerializeField] private int price;
         [SerializeField] private float weight;
         [SerializeField] private bool stackable;
+        [SerializeField] private ItemType itemtype;
+        [SerializeField] private ItemRarity rarity;
+        [SerializeField] private ItemElement element;
 
         public int ItemId => itemId;
         public string ItemName => itemName;
         public int Price => price;
         public float Weight => weight;
         public bool Stackable => stackable;
+        public ItemType Type => itemtype;
+        public ItemRarity Rarity => rarity;
+        public ItemElement Element => element;
 
         /// <summary>테이블 값이 채워졌는지 여부</summary>
         public bool IsLoaded { get; private set; }
@@ -82,9 +89,21 @@ namespace ProjectT.Game
             price = row.GetInt("Price");
             weight = row.GetFloat("Weight");
             stackable = row.GetBool("Stackable");
+            try
+            {
+                itemtype = row.GetEnum<ItemType>("Type");
+                // 제네릭에는 코드의 enum 타입, 문자열에는 엑셀의 컬럼 이름을 넣습니다.
+                rarity = row.GetEnum<ItemRarity>("Rarity");
+                element = row.GetEnum<ItemElement>("Element");
+            }
+            catch (System.InvalidOperationException e)
+            {
+                Debug.LogError($"[ItemCube] {name}: {e.Message}", this);
+                return;
+            }
             IsLoaded = true;
 
-            Debug.Log($"[ItemCube] Id={itemId} Name={itemName} Price={price} Weight={weight} Stackable={stackable}", this);
+            Debug.Log($"[ItemCube] Id={itemId} Name={itemName} Price={price} Weight={weight} Stackable={stackable} Type={itemtype} Rarity={rarity} Element={element}", this);
         }
     }
 }

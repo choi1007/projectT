@@ -17,7 +17,8 @@ namespace ProjectT.DataTable.Editor
     ///
     /// CSV 규칙:
     ///   1행: 컬럼 이름 (예: Id, Name, Hp, MoveSpeed, IsBoss) — int 타입 "Id" 컬럼 필수
-    ///   2행: 컬럼 타입 (int / float / bool / string, 대소문자 무관)
+    ///   2행: 컬럼 타입 (int / float / bool / string / enum:타입이름)
+    ///   enum 값은 선언된 항목 이름만 허용하며 대소문자를 구분합니다. 숫자와 조합값은 허용하지 않습니다.
     ///   3행부터: 실제 데이터
     ///
     /// 임포트 전에 데이터를 검증합니다. 에러가 하나라도 있으면 임포트를 중단하고
@@ -53,7 +54,7 @@ namespace ProjectT.DataTable.Editor
                 Selection.activeObject = asset;
                 EditorGUIUtility.PingObject(asset);
             }
-            else
+            else if (!DataTableEnumGenerator.IsPending)
             {
                 EditorUtility.DisplayDialog("Data Table Import",
                     "데이터에 오류가 있어 임포트하지 않았습니다. 기존 테이블은 그대로입니다.\n콘솔에서 오류 위치를 확인하세요.", "OK");
@@ -76,7 +77,7 @@ namespace ProjectT.DataTable.Editor
             {
                 var asset = ImportCsvFile(file);
                 if (asset != null) succeeded.Add(asset.tableName);
-                else failed.Add(Path.GetFileName(file));
+                else if (!DataTableEnumGenerator.IsPending) failed.Add(Path.GetFileName(file));
             }
 
             AssetDatabase.SaveAssets();
@@ -105,6 +106,7 @@ namespace ProjectT.DataTable.Editor
             var fileName = Path.GetFileName(fullPath);
             var tableName = Path.GetFileNameWithoutExtension(fullPath);
             var text = File.ReadAllText(fullPath, Encoding.UTF8);
+            if (!DataTableEnumGenerator.Prepare(text, fullPath)) return null;
 
             var errors = new List<string>();
             var warnings = new List<string>();
@@ -188,6 +190,8 @@ namespace ProjectT.DataTable.Editor
             }
 
             var seenNames = new HashSet<string>(StringComparer.Ordinal);
+            var enumTypes = GetEnumTypes().ToArray();
+            var enumTypesByColumn = new Dictionary<string, Type>();
             for (int c = 0; c < colCount; c++)
             {
                 var name = nameRow[c].Trim();
@@ -202,13 +206,28 @@ namespace ProjectT.DataTable.Editor
                     errors.Add($"{CellRef(nameLine, c)}: 컬럼 이름 '{name}'이(가) 중복됩니다.");
                 }
 
+                string enumTypeName = null;
+                if (typeStr.StartsWith("enum:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string requestedName = typeStr.Substring(5).Trim();
+                    var matches = enumTypes
+                        .Where(t => t.IsEnum && (t.FullName == requestedName || t.Name == requestedName)).ToArray();
+                    if (matches.Length != 1)
+                        errors.Add($"{CellRef(typeLine, c)}: enum '{requestedName}'을(를) 찾을 수 없거나 이름이 중복됩니다. 네임스페이스를 포함한 타입 이름을 확인하세요.");
+                    else
+                    {
+                        enumTypeName = matches[0].FullName;
+                        enumTypesByColumn[name] = matches[0];
+                    }
+                }
+
                 if (!TryParseColumnType(typeStr, out var type))
                 {
-                    errors.Add($"{CellRef(typeLine, c)}: '{name}' 컬럼의 타입 '{typeStr}'을(를) 알 수 없습니다. (int, float, bool, string 중 하나)");
+                    errors.Add($"{CellRef(typeLine, c)}: '{name}' 컬럼의 타입 '{typeStr}'을(를) 알 수 없습니다. (int, float, bool, string, enum:타입이름 중 하나)");
                     type = ColumnType.String;
                 }
 
-                columns.Add(new ColumnDef { name = name, type = type });
+                columns.Add(new ColumnDef { name = name, type = type, enumTypeName = enumTypeName });
             }
 
             int idIndex = columns.FindIndex(col => col.name == IdColumn);
@@ -243,7 +262,12 @@ namespace ProjectT.DataTable.Editor
                     var value = c < raw.Length ? raw[c] : string.Empty;
                     if (col.type != ColumnType.String) value = value.Trim();
 
-                    if (col.type != ColumnType.String && value.Length == 0)
+                    if (col.type == ColumnType.Enum)
+                    {
+                        if (enumTypesByColumn.TryGetValue(col.name, out var enumType) && !Enum.IsDefined(enumType, value))
+                            errors.Add($"{CellRef(line, c)}: '{col.name}' 값 '{value}'은(는) enum:{col.enumTypeName}의 항목 이름이 아닙니다.");
+                    }
+                    else if (col.type != ColumnType.String && value.Length == 0)
                     {
                         if (c == idIndex)
                             errors.Add($"{CellRef(line, c)}: '{IdColumn}' 값이 비어 있습니다.");
@@ -273,8 +297,30 @@ namespace ProjectT.DataTable.Editor
             return errors.Count == 0;
         }
 
+        // 에디터 전용 타입을 제외하고, 플레이어에 포함되는 공개 enum만 허용합니다.
+        internal static IEnumerable<Type> GetEnumTypes()
+        {
+            var runtimeAssemblies = new HashSet<string>(UnityEditor.Compilation.CompilationPipeline
+                .GetAssemblies(UnityEditor.Compilation.AssembliesType.Player).Select(a => a.name));
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.IsDynamic || !runtimeAssemblies.Contains(assembly.GetName().Name)) continue;
+                Type[] types;
+                try { types = assembly.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; }
+                foreach (var type in types)
+                    if (type != null && type.IsEnum && type.IsVisible && !type.ContainsGenericParameters)
+                        yield return type;
+            }
+        }
+
         private static bool TryParseColumnType(string typeStr, out ColumnType type)
         {
+            if (typeStr.StartsWith("enum:", StringComparison.OrdinalIgnoreCase))
+            {
+                type = ColumnType.Enum;
+                return true;
+            }
             switch (typeStr.ToLowerInvariant())
             {
                 case "int": type = ColumnType.Int; return true;
@@ -373,7 +419,7 @@ namespace ProjectT.DataTable.Editor
         /// 에러 메시지에 쓰기 위해 각 행이 시작된 줄 번호(1부터)를 함께 돌려줍니다.
         /// 완전히 빈 행(",,,," 포함)은 건너뜁니다.
         /// </summary>
-        private static List<(int line, string[] cells)> ParseCsv(string text)
+        internal static List<(int line, string[] cells)> ParseCsv(string text)
         {
             var rows = new List<(int line, string[] cells)>();
             var field = new StringBuilder();
